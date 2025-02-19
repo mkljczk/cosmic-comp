@@ -392,6 +392,7 @@ where
             }
         }
     };
+    let instance = instance.clone();
 
     let mut handle_state = instance.data::<WorkspaceData>().unwrap().lock().unwrap();
     let mut changed = false;
@@ -411,7 +412,11 @@ where
         handle_state.coordinates = workspace.coordinates.clone();
         changed = true;
     }
-    if handle_state.capabilities != workspace.capabilities {
+    let ext_capabilities = WorkspaceCapabilities::Activate
+        | WorkspaceCapabilities::Deactivate
+        | WorkspaceCapabilities::Remove
+        | WorkspaceCapabilities::Assign;
+    if handle_state.capabilities & ext_capabilities != workspace.capabilities & ext_capabilities {
         let caps = workspace
             .capabilities
             .iter()
@@ -432,7 +437,8 @@ where
             })
             .collect::<ext_workspace_handle_v1::WorkspaceCapabilities>();
         instance.capabilities(caps);
-        handle_state.capabilities = workspace.capabilities.clone();
+        handle_state.capabilities = (handle_state.capabilities & !ext_capabilities)
+            | (workspace.capabilities & ext_capabilities);
         changed = true;
     }
     if handle_state.states != workspace.states {
@@ -441,6 +447,18 @@ where
         changed = true;
     }
     // TODO ext_workspace_handle_v1::id
+
+    if let Some(cosmic_v2_handle) = handle_state
+        .cosmic_v2_handle
+        .as_ref()
+        .and_then(|x| x.upgrade().ok())
+    {
+        changed |= super::cosmic_v2::send_workspace_to_client(
+            &cosmic_v2_handle,
+            &mut handle_state,
+            workspace,
+        );
+    }
 
     changed
 }
